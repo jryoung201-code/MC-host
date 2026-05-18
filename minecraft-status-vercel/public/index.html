@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MC Server Status</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --green:   #39ff14;
+      --red:     #ff2a2a;
+      --yellow:  #ffe135;
+      --dirt:    #8b5e3c;
+      --stone:   #7f7f7f;
+      --bg:      #0d0d0d;
+      --panel:   #1a1a1a;
+      --border:  #2e2e2e;
+      --text:    #e8e8e8;
+      --muted:   #666;
+      --pixel: 4px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 60px;
+      overflow-x: hidden;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.12) 2px,
+        rgba(0,0,0,0.12) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Pixel border mixin via box-shadow */
+    .pixel-box {
+      border: var(--pixel) solid var(--border);
+      box-shadow:
+        inset var(--pixel) var(--pixel) 0 rgba(255,255,255,0.05),
+        inset calc(-1 * var(--pixel)) calc(-1 * var(--pixel)) 0 rgba(0,0,0,0.4),
+        0 0 0 var(--pixel) #000;
+      background: var(--panel);
+    }
+
+    /* ─── Header ─── */
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      animation: flicker 8s infinite;
+    }
+
+    .logo {
+      font-size: clamp(18px, 4vw, 28px);
+      color: var(--green);
+      text-shadow:
+        0 0 10px var(--green),
+        0 0 30px rgba(57,255,20,0.3),
+        4px 4px 0 #004400;
+      letter-spacing: 2px;
+      line-height: 1.6;
+    }
+
+    .logo span { color: var(--yellow); text-shadow: 4px 4px 0 #664400, 0 0 12px var(--yellow); }
+
+    .subtitle {
+      font-family: 'VT323', monospace;
+      font-size: 20px;
+      color: var(--muted);
+      margin-top: 10px;
+      letter-spacing: 3px;
+    }
+
+    /* ─── Status Card ─── */
+    .card {
+      width: 100%;
+      max-width: 640px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 9px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    /* ─── Status Indicator ─── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .status-dot {
+      width: 20px;
+      height: 20px;
+      border: 3px solid #000;
+      flex-shrink: 0;
+      transition: background 0.4s;
+    }
+    .status-dot.online  { background: var(--green); box-shadow: 0 0 14px var(--green); animation: pulse 2s infinite; }
+    .status-dot.offline { background: var(--red);   box-shadow: 0 0 14px var(--red); }
+    .status-dot.loading { background: var(--yellow); animation: blink 0.8s step-start infinite; }
+
+    .status-text {
+      font-size: 14px;
+    }
+    .status-text.online  { color: var(--green); }
+    .status-text.offline { color: var(--red); }
+    .status-text.loading { color: var(--yellow); }
+
+    /* ─── Stats Grid ─── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-block {
+      background: #111;
+      border: 2px solid var(--border);
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      font-size: 7px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-family: 'VT323', monospace;
+      font-size: 28px;
+      color: var(--text);
+      line-height: 1;
+    }
+    .stat-value.highlight { color: var(--green); }
+
+    /* ─── MOTD ─── */
+    .motd {
+      background: #000;
+      border: 2px solid var(--border);
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-family: 'VT323', monospace;
+      font-size: 20px;
+      color: var(--yellow);
+      min-height: 44px;
+      word-break: break-all;
+    }
+    .motd-label {
+      font-size: 7px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    /* ─── Player List ─── */
+    .player-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .player-tag {
+      background: #1e3a1e;
+      border: 2px solid #2e5a2e;
+      color: var(--green);
+      padding: 4px 10px;
+      font-size: 9px;
+      font-family: 'VT323', monospace;
+      font-size: 17px;
+    }
+
+    .no-players {
+      color: var(--muted);
+      font-family: 'VT323', monospace;
+      font-size: 18px;
+    }
+
+    /* ─── IP Display ─── */
+    .ip-block {
+      background: #000;
+      border: 2px solid var(--border);
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .ip-block:hover { border-color: var(--green); }
+    .ip-block:hover .copy-hint { color: var(--green); }
+
+    .ip-address {
+      font-family: 'VT323', monospace;
+      font-size: 22px;
+      color: var(--yellow);
+      word-break: break-all;
+    }
+
+    .copy-hint {
+      font-size: 7px;
+      color: var(--muted);
+      white-space: nowrap;
+      transition: color 0.2s;
+    }
+
+    .copy-toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--green);
+      color: #000;
+      padding: 10px 20px;
+      font-size: 9px;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      z-index: 200;
+      border: 3px solid #000;
+    }
+    .copy-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ─── Refresh Button ─── */
+    .refresh-btn {
+      display: block;
+      width: 100%;
+      max-width: 640px;
+      padding: 14px;
+      background: #1a1a1a;
+      border: var(--pixel) solid var(--border);
+      box-shadow: inset var(--pixel) var(--pixel) 0 rgba(255,255,255,0.05),
+                  inset calc(-1 * var(--pixel)) calc(-1 * var(--pixel)) 0 rgba(0,0,0,0.5),
+                  0 0 0 var(--pixel) #000;
+      color: var(--green);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 9px;
+      cursor: pointer;
+      text-align: center;
+      letter-spacing: 2px;
+      transition: background 0.15s, transform 0.1s;
+      margin-bottom: 20px;
+    }
+    .refresh-btn:hover  { background: #222; }
+    .refresh-btn:active { transform: translateY(2px); }
+
+    /* ─── Footer ─── */
+    footer {
+      font-family: 'VT323', monospace;
+      font-size: 16px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 10px;
+    }
+    footer a { color: var(--stone); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    .last-checked {
+      font-family: 'VT323', monospace;
+      font-size: 15px;
+      color: var(--muted);
+      text-align: right;
+      margin-bottom: 10px;
+    }
+
+    /* ─── Animations ─── */
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 10px var(--green); }
+      50%       { box-shadow: 0 0 22px var(--green), 0 0 40px rgba(57,255,20,0.2); }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    @keyframes flicker {
+      0%, 95%, 100% { opacity: 1; }
+      96%            { opacity: 0.85; }
+      97%            { opacity: 1; }
+      98%            { opacity: 0.9; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card { animation: fadeIn 0.4s ease both; }
+
+    /* ─── Ping color coding ─── */
+    .ping-good    { color: var(--green); }
+    .ping-ok      { color: var(--yellow); }
+    .ping-bad     { color: var(--red); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">⛏ <span>MC</span> STATUS</div>
+    <div class="subtitle">// SERVER MONITOR //</div>
+  </header>
+
+  <!-- IP copy card -->
+  <div class="card pixel-box" id="ip-card" style="margin-bottom:20px; padding: 18px 28px;">
+    <div class="card-title">Server Address</div>
+    <div class="ip-block" onclick="copyIP()">
+      <div class="ip-address" id="ip-display">—</div>
+      <div class="copy-hint">[ CLICK TO COPY ]</div>
+    </div>
+  </div>
+
+  <!-- Main status card -->
+  <div class="card pixel-box">
+    <div class="card-title">Live Status</div>
+
+    <div class="status-row">
+      <div class="status-dot loading" id="dot"></div>
+      <div class="status-text loading" id="status-text">CHECKING...</div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-block">
+        <div class="stat-label">Players Online</div>
+        <div class="stat-value highlight" id="players-online">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Max Players</div>
+        <div class="stat-value" id="players-max">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Ping (ms)</div>
+        <div class="stat-value" id="ping">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Version</div>
+        <div class="stat-value" id="version" style="font-size:18px;">—</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="motd-label">MOTD</div>
+      <div class="motd" id="motd">—</div>
+    </div>
+  </div>
+
+  <!-- Players card -->
+  <div class="card pixel-box">
+    <div class="card-title">Online Players</div>
+    <div class="player-list" id="player-list">
+      <div class="no-players">No data yet...</div>
+    </div>
+  </div>
+
+  <div class="last-checked" id="last-checked"></div>
+
+  <button class="refresh-btn" onclick="fetchStatus()">[ REFRESH STATUS ]</button>
+
+  <footer>
+    Powered by GitHub Actions + playit.gg &nbsp;·&nbsp;
+    <a href="https://github.com" target="_blank">GitHub</a>
+  </footer>
+
+  <div class="copy-toast" id="toast">IP COPIED!</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────
+  // The API route reads MC_HOST from env, but you can override here for display:
+  const DISPLAY_HOST = window.MC_HOST || "your-tunnel.at.playit.gg";
+  const DISPLAY_PORT = window.MC_PORT || "25565";
+  // ────────────────────────────────────────────────────────
+
+  document.getElementById("ip-display").textContent =
+    DISPLAY_PORT === "25565" ? DISPLAY_HOST : `${DISPLAY_HOST}:${DISPLAY_PORT}`;
+
+  async function fetchStatus() {
+    setLoading();
+    try {
+      const res = await fetch("/api/status");
+      const data = await res.json();
+      renderStatus(data);
+    } catch (e) {
+      renderOffline("Failed to reach API");
+    }
+  }
+
+  function setLoading() {
+    const dot  = document.getElementById("dot");
+    const text = document.getElementById("status-text");
+    dot.className  = "status-dot loading";
+    text.className = "status-text loading";
+    text.textContent = "CHECKING...";
+  }
+
+  function renderStatus(data) {
+    const dot    = document.getElementById("dot");
+    const text   = document.getElementById("status-text");
+    const now    = new Date().toLocaleTimeString();
+
+    document.getElementById("last-checked").textContent = `Last checked: ${now}`;
+
+    if (!data.online) {
+      dot.className  = "status-dot offline";
+      text.className = "status-text offline";
+      text.textContent = "OFFLINE";
+      document.getElementById("players-online").textContent = "0";
+      document.getElementById("players-max").textContent = "—";
+      document.getElementById("ping").textContent = "—";
+      document.getElementById("version").textContent = "—";
+      document.getElementById("motd").textContent = data.error || "Server is offline";
+      document.getElementById("player-list").innerHTML = '<div class="no-players">Server is offline</div>';
+      return;
+    }
+
+    dot.className  = "status-dot online";
+    text.className = "status-text online";
+    text.textContent = "ONLINE";
+
+    document.getElementById("players-online").textContent = data.players.online;
+    document.getElementById("players-max").textContent    = data.players.max;
+    document.getElementById("version").textContent        = data.version;
+    document.getElementById("motd").textContent           = stripMotdCodes(data.motd) || "—";
+
+    // Ping with color
+    const pingEl = document.getElementById("ping");
+    pingEl.textContent = data.ping;
+    pingEl.className = "stat-value " +
+      (data.ping < 80 ? "ping-good" : data.ping < 200 ? "ping-ok" : "ping-bad");
+
+    // Players
+    const listEl = document.getElementById("player-list");
+    if (data.players.list && data.players.list.length > 0) {
+      listEl.innerHTML = data.players.list
+        .map(p => `<div class="player-tag">👤 ${escHtml(p)}</div>`)
+        .join("");
+    } else {
+      listEl.innerHTML = data.players.online > 0
+        ? `<div class="no-players">${data.players.online} player(s) online (names hidden)</div>`
+        : '<div class="no-players">No players online</div>';
+    }
+  }
+
+  function renderOffline(msg) {
+    document.getElementById("dot").className  = "status-dot offline";
+    document.getElementById("status-text").className = "status-text offline";
+    document.getElementById("status-text").textContent = "ERROR";
+    document.getElementById("motd").textContent = msg;
+  }
+
+  function stripMotdCodes(str) {
+    return (str || "").replace(/§[0-9a-fk-or]/gi, "");
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function copyIP() {
+    const ip = document.getElementById("ip-display").textContent;
+    navigator.clipboard.writeText(ip).then(() => {
+      const toast = document.getElementById("toast");
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2000);
+    });
+  }
+
+  // Auto-refresh every 30 seconds
+  fetchStatus();
+  setInterval(fetchStatus, 30_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "minecraft-status",
+  "version": "1.0.0",
+  "description": "Minecraft server status page hosted on Vercel",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "devDependencies": {
+    "vercel": "^34.0.0"
+  }
+}

@@ -1,0 +1,75 @@
+name: Minecraft Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      mc_version:
+        description: "Minecraft version (e.g. 1.20.4)"
+        required: true
+        default: "1.20.4"
+      tunnel_token:
+        description: "Playit.gg tunnel token (get from playit.gg)"
+        required: true
+
+jobs:
+  run-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # Just under GitHub's 6-hour limit
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Download Paper MC server jar
+        run: |
+          VERSION="${{ github.event.inputs.mc_version }}"
+          # Fetch latest build number for the given version
+          BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/${VERSION}/builds" \
+            | python3 -c "import sys,json; builds=json.load(sys.stdin)['builds']; print(builds[-1]['build'])")
+          echo "Downloading Paper ${VERSION} build ${BUILD}"
+          curl -Lo server.jar \
+            "https://api.papermc.io/v2/projects/paper/versions/${VERSION}/builds/${BUILD}/downloads/paper-${VERSION}-${BUILD}.jar"
+
+      - name: Accept EULA
+        run: echo "eula=true" > eula.txt
+
+      - name: Copy server.properties (if exists in repo)
+        run: |
+          if [ -f server-config/server.properties ]; then
+            cp server-config/server.properties server.properties
+          fi
+
+      - name: Copy ops.json (if exists in repo)
+        run: |
+          if [ -f server-config/ops.json ]; then
+            cp server-config/ops.json ops.json
+          fi
+
+      - name: Install playit.gg tunnel
+        run: |
+          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/v0 . ." | sudo tee /etc/apt/sources.list.d/playit-cloud.list
+          sudo apt update
+          sudo apt install -y playit
+
+      - name: Start tunnel + server
+        env:
+          PLAYIT_AUTH_TOKEN: ${{ github.event.inputs.tunnel_token }}
+        run: |
+          # Start the tunnel in background
+          playit --secret "$PLAYIT_AUTH_TOKEN" &
+
+          # Give tunnel a moment to connect
+          sleep 5
+
+          # Start Minecraft server (runs until workflow times out)
+          java -Xmx3G -Xms1G \
+            -XX:+UseG1GC -XX:+ParallelRefProcEnabled \
+            -XX:MaxGCPauseMillis=200 \
+            -jar server.jar --nogui
